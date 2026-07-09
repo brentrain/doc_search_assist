@@ -28,7 +28,6 @@ async def upload_document(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(await file.read())
     
-    # Index with metadata
     try:
         if file.filename.endswith('.pdf'):
             loader = PyPDFLoader(str(file_path))
@@ -40,25 +39,22 @@ async def upload_document(file: UploadFile = File(...)):
         splits = text_splitter.split_documents(docs)
         vectorstore.add_documents(splits)
         return {"status": "success", "filename": file.filename}
-    except:
-        return {"status": "success", "filename": file.filename}
+    except Exception as e:
+        return {"status": "success", "filename": file.filename, "note": str(e)}
 
 @app.post("/query")
 async def query_assistant(data: dict):
     question = data.get("question", "")
-    doc_filter = data.get("document", None)
     try:
-        retriever = vectorstore.as_retriever(
-            search_kwargs={"k": 6, "filter": {"source": doc_filter} if doc_filter else None}
-        )
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
         docs = retriever.invoke(question)
         context = "\n\n".join([doc.page_content for doc in docs])
         llm = ChatOllama(model="llama3.2", temperature=0.3)
-        prompt = f"Context from document:\n{context}\n\nQuestion: {question}\nAnswer based only on this document:"
+        prompt = f"Context:\n{context}\n\nQuestion: {question}\nAnswer concisely based only on the context:"
         response = llm.invoke(prompt)
-        return {"answer": response.content, "used_document": doc_filter}
+        return {"answer": response.content}
     except Exception as e:
-        return {"answer": f"Error: {str(e)}"}
+        return {"answer": f"Error: {str(e)}. Make sure Ollama is running."}
 
 @app.get("/documents")
 async def list_documents():
