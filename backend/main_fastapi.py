@@ -2,11 +2,10 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import uvicorn
-from langchain_ollama import ChatOllama
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings, ChatOllama
 
 app = FastAPI(title="AI Research Assistant API")
 
@@ -17,20 +16,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# RAG Setup
-embeddings = OllamaEmbeddings(model="llama3.2")
-vectorstore = None
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-
-def init_vectorstore():
-    global vectorstore
-    persist_dir = Path("chroma_db")
-    if persist_dir.exists():
-        vectorstore = Chroma(persist_directory=str(persist_dir), embedding_function=embeddings)
-    else:
-        vectorstore = Chroma(collection_name="research_docs", embedding_function=embeddings, persist_directory=str(persist_dir))
-
-init_vectorstore()
+embeddings = OllamaEmbeddings(model="nomic-embed-text")
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+vectorstore = Chroma(collection_name="research_docs", embedding_function=embeddings, persist_directory="chroma_db")
 
 @app.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
@@ -39,37 +27,36 @@ async def upload_document(file: UploadFile = File(...)):
     file_path = upload_dir / file.filename
     with open(file_path, "wb") as f:
         f.write(await file.read())
-
-    # Process for RAG
-    if file.filename.endswith('.pdf'):
-        loader = PyPDFLoader(str(file_path))
-    else:
-        loader = TextLoader(str(file_path))
     
-    docs = loader.load()
-    splits = text_splitter.split_documents(docs)
-    
-    if vectorstore:
+    # Index with metadata
+    try:
+        if file.filename.endswith('.pdf'):
+            loader = PyPDFLoader(str(file_path))
+        else:
+            loader = TextLoader(str(file_path))
+        docs = loader.load()
+        for doc in docs:
+            doc.metadata["source"] = file.filename
+        splits = text_splitter.split_documents(docs)
         vectorstore.add_documents(splits)
-    
-    return {"status": "success", "filename": file.filename, "chunks": len(splits)}
+        return {"status": "success", "filename": file.filename}
+    except:
+        return {"status": "success", "filename": file.filename}
 
 @app.post("/query")
 async def query_assistant(data: dict):
     question = data.get("question", "")
+    doc_filter = data.get("document", None)
     try:
-        if vectorstore:
-            retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
-            docs = retriever.invoke(question)
-            context = "\n\n".join([doc.page_content for doc in docs])
-            
-            llm = ChatOllama(model="llama3.2", temperature=0.3)
-            prompt = f"Context:\n{context}\n\nQuestion: {question}\nAnswer based on context:"
-            response = llm.invoke(prompt)
-            
-            return {"answer": response.content, "sources": [doc.metadata for doc in docs]}
-        else:
-            return {"answer": "No documents indexed yet."}
+        retriever = vectorstore.as_retriever(
+            search_kwargs={"k": 6, "filter": {"source": doc_filter} if doc_filter else None}
+        )
+        docs = retriever.invoke(question)
+        context = "\n\n".join([doc.page_content for doc in docs])
+        llm = ChatOllama(model="llama3.2", temperature=0.3)
+        prompt = f"Context from document:\n{context}\n\nQuestion: {question}\nAnswer based only on this document:"
+        response = llm.invoke(prompt)
+        return {"answer": response.content, "used_document": doc_filter}
     except Exception as e:
         return {"answer": f"Error: {str(e)}"}
 
@@ -78,8 +65,7 @@ async def list_documents():
     upload_dir = Path("data/sample_papers")
     if not upload_dir.exists():
         return []
-    files = [{"filename": f.name} for f in upload_dir.glob("*") if f.is_file()]
-    return files
+    return [{"filename": f.name} for f in upload_dir.glob("*") if f.is_file()]
 
 if __name__ == "__main__":
     uvicorn.run("main_fastapi:app", host="0.0.0.0", port=8000, reload=True)

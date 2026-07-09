@@ -1,0 +1,18 @@
+# Company Policies
+
+## Remote Work Policy
+Employees are allowed to work remotely up to 4 days per week with manager approval.
+
+## Vacation and Leave
+- 20 paid vacation days per year
+- 10 sick days
+- Paid parental leave: 12 weeks
+
+## Confidentiality
+All employees must maintain strict confidentiality of client and company data.
+
+## Code of Conduct
+Treat all colleagues with respect. No discrimination or harassment.
+
+## IT Security
+Use company VPN for remote access. Do not share passwords.
