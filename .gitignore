@@ -8,3 +8,5 @@ backend/data/sample_papers/*.pdf
 .vercel/
 .env*
 !**/.env.example
+frontend/.agents/
+frontend/skills-lock.json

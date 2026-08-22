@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useClerk, useUser } from '@clerk/nextjs';
 import {
   ArrowUp,
   Check,
@@ -29,7 +30,7 @@ import { Button } from '@/components/ui/button';
 import { ContractReviewPanel } from '@/components/contract-review';
 import { AuthScreen } from '@/components/auth-screen';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = '/api';
 
 type DocumentItem = { filename: string };
 type SourceItem = { source?: string; page?: number };
@@ -211,8 +212,8 @@ function EmptyState({ onSuggestion }: { onSuggestion: (suggestion: string) => vo
 }
 
 export default function ResearchAssistant() {
-  const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const { user: clerkUser, isLoaded, isSignedIn } = useUser();
+  const { signOut } = useClerk();
   const [documentKind, setDocumentKind] = useState<DocumentKind>('legal');
   const [activeMode, setActiveMode] = useState<'ask' | 'review'>('ask');
   const [question, setQuestion] = useState('');
@@ -244,14 +245,14 @@ export default function ResearchAssistant() {
     }
   }, []);
 
-  useEffect(() => {
-    void fetch(`${API_URL}/auth/me`, { credentials: 'include' })
-      .then(async (response) => response.ok ? (await response.json()).user : null)
-      .then((authenticatedUser) => setUser(authenticatedUser))
-      .finally(() => setAuthLoading(false));
-  }, []);
+  const user: User | null = clerkUser ? {
+    id: clerkUser.id,
+    name: clerkUser.fullName || clerkUser.firstName || 'ReadBefore user',
+    email: clerkUser.primaryEmailAddress?.emailAddress || '',
+    is_owner: false,
+  } : null;
 
-  useEffect(() => { if (user) void loadDocuments(); }, [loadDocuments, user]);
+  useEffect(() => { if (isSignedIn) void loadDocuments(); }, [isSignedIn, loadDocuments]);
 
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -331,12 +332,12 @@ export default function ResearchAssistant() {
   const selectedLabel = selectedDocument || 'All documents';
 
   const logout = async () => {
-    await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
-    setUser(null); setDocuments([]); setSelectedDocument(null); setHistory([]);
+    setDocuments([]); setSelectedDocument(null); setHistory([]);
+    await signOut();
   };
 
-  if (authLoading) return <div className="flex min-h-screen items-center justify-center bg-[#f6f7f9]"><LoaderCircle className="h-6 w-6 animate-spin text-indigo-600" /></div>;
-  if (!user) return <AuthScreen apiUrl={API_URL} onAuthenticated={setUser} />;
+  if (!isLoaded) return <div className="flex min-h-screen items-center justify-center bg-[#f6f7f9]"><LoaderCircle className="h-6 w-6 animate-spin text-indigo-600" /></div>;
+  if (!isSignedIn || !user) return <AuthScreen />;
 
   return (
     <div className="flex min-h-screen bg-[#f6f7f9] text-slate-950">
