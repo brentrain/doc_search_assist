@@ -1,1 +1,10 @@
 backend/venv/
+.npm-cache/
+.venv-doc-search/
+chroma_db/
+backend/data/app.db
+backend/data/users/
+backend/data/sample_papers/*.pdf
+.vercel/
+.env*
+!**/.env.example
